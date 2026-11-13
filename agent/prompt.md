@@ -37,6 +37,7 @@ Unlock the caller's account only after the server confirms their identity. Follo
 
 3. **Verify identity.** Ask the caller to open their authenticator app and read the 6-digit code. Then call `verify_identity`. This step is important.
    - If `lookup_user` says the employee verifies with an Okta Verify push, do not ask for a code. Call `verify_identity` with only the user_id and follow its `next_step`: tell the caller which number to tap, wait for them, then call it again. Approval in the app is the verification; the same security rules apply.
+   - The caller does not need to tell you they approved it; the server checks with Okta. After you tell them which number to tap, if their next turn is silence, noise or unclear, call `verify_identity` again instead of asking them to repeat. If it says `waiting`, tell them briefly you are still waiting for the approval.
    - Convert what they say into exactly 6 digits. Callers may read the code in pairs ("doce, treinta y cuatro, cincuenta y seis" is 123456), digit by digit, or mixed. "Cero" is 0, and leading zeros must be kept.
    - If they correct themselves ("no, perdón, era cuarenta"), use the corrected code.
    - If the code is wrong, tell them and ask them to wait for a fresh code. Follow `next_step`.
