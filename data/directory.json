@@ -1,0 +1,166 @@
+{
+  "employees": [
+    {
+      "user_id": "u001",
+      "employee_number": "EM3726",
+      "first_name": "María José",
+      "first_surname": "Hernández",
+      "second_surname": "Villaseñor",
+      "phone": "+52 33 0000 1897",
+      "account_status": "locked"
+    },
+    {
+      "user_id": "u002",
+      "employee_number": "XF3759",
+      "first_name": "Juan Carlos",
+      "first_surname": "Hernández",
+      "second_surname": "Ruiz",
+      "phone": "+52 33 0000 8088",
+      "account_status": "locked"
+    },
+    {
+      "user_id": "u003",
+      "employee_number": "KA3068",
+      "first_name": "Juan Carlos",
+      "first_surname": "Hernández",
+      "second_surname": "Ortega",
+      "phone": "+52 33 0000 1952",
+      "account_status": "active"
+    },
+    {
+      "user_id": "u004",
+      "employee_number": "HV9063",
+      "first_name": "José Luis",
+      "first_surname": "García",
+      "second_surname": "López",
+      "phone": "+52 33 0000 3101",
+      "account_status": "locked"
+    },
+    {
+      "user_id": "u005",
+      "employee_number": "KG0766",
+      "first_name": "José Luis",
+      "first_surname": "García",
+      "second_surname": "López",
+      "phone": "+52 33 0000 2801",
+      "account_status": "active"
+    },
+    {
+      "user_id": "u006",
+      "employee_number": "KE6806",
+      "first_name": "Guadalupe",
+      "first_surname": "Ramírez",
+      "second_surname": "Núñez",
+      "phone": "+52 33 0000 4305",
+      "account_status": "locked"
+    },
+    {
+      "user_id": "u007",
+      "employee_number": "FE8191",
+      "first_name": "Ana Sofía",
+      "first_surname": "Treviño",
+      "second_surname": "Garza",
+      "phone": "+52 33 0000 8800",
+      "account_status": "active"
+    },
+    {
+      "user_id": "u008",
+      "employee_number": "FL4646",
+      "first_name": "Luis Fernando",
+      "first_surname": "Peña",
+      "second_surname": "Castañeda",
+      "phone": "+52 33 0000 4595",
+      "account_status": "locked"
+    },
+    {
+      "user_id": "u009",
+      "employee_number": "RN4426",
+      "first_name": "Ximena",
+      "first_surname": "Ibarra",
+      "second_surname": "Zúñiga",
+      "phone": "+52 33 0000 7810",
+      "account_status": "locked"
+    },
+    {
+      "user_id": "u010",
+      "employee_number": "SX1151",
+      "first_name": "Jesús Alberto",
+      "first_surname": "Ochoa",
+      "second_surname": "Muñoz",
+      "phone": "+52 33 0000 0395",
+      "account_status": "locked"
+    },
+    {
+      "user_id": "u011",
+      "employee_number": "FT4102",
+      "first_name": "Daniela",
+      "first_surname": "Velázquez",
+      "second_surname": "Robles",
+      "phone": "+52 33 0000 3816",
+      "account_status": "active"
+    },
+    {
+      "user_id": "u012",
+      "employee_number": "ZM8858",
+      "first_name": "Rodrigo",
+      "first_surname": "Saldaña",
+      "second_surname": "Echeverría",
+      "phone": "+52 33 0000 6891",
+      "account_status": "locked"
+    },
+    {
+      "user_id": "u013",
+      "employee_number": "KG5599",
+      "first_name": "Itzel",
+      "first_surname": "Moctezuma",
+      "second_surname": "Quiñones",
+      "phone": "+52 33 0000 1285",
+      "account_status": "locked"
+    },
+    {
+      "user_id": "u014",
+      "employee_number": "LR0222",
+      "first_name": "Xóchitl",
+      "first_surname": "Cuauhtémoc",
+      "second_surname": "Ayala",
+      "phone": "+52 33 0000 5861",
+      "account_status": "locked"
+    },
+    {
+      "user_id": "u015",
+      "employee_number": "RH8107",
+      "first_name": "Emily",
+      "first_surname": "Johnson",
+      "second_surname": null,
+      "phone": "+52 33 0000 7822",
+      "account_status": "locked"
+    },
+    {
+      "user_id": "u016",
+      "employee_number": "GU7701",
+      "first_name": "Roberto",
+      "first_surname": "Díaz de León",
+      "second_surname": "Martínez",
+      "phone": "+52 33 0000 6078",
+      "account_status": "locked"
+    },
+    {
+      "user_id": "u017",
+      "employee_number": "EL4337",
+      "first_name": "Paola",
+      "first_surname": "Ávila",
+      "second_surname": "Sánchez",
+      "phone": "+52 33 0000 9591",
+      "account_status": "disabled"
+    },
+    {
+      "user_id": "u018",
+      "employee_number": "YR5831",
+      "first_name": "Miguel Ángel",
+      "first_surname": "Cervantes",
+      "second_surname": "Uribe",
+      "phone": "+52 33 0000 0961",
+      "account_status": "active"
+    }
+  ]
+}
