@@ -40,7 +40,9 @@ class VerifyIdentityRequest(BaseModel):
 
 class UnlockAccountRequest(BaseModel):
     user_id: str
-    verification_token: str
+    # Normally sent as the X-Verification-Token header from a secret__ dynamic
+    # variable so it never reaches the LLM; the body field is a fallback.
+    verification_token: str | None = None
 
 
 @dataclass
@@ -177,16 +179,19 @@ def create_app(
         }
 
     @app.post("/tools/unlock_account", dependencies=tools)
-    def unlock_account(req: UnlockAccountRequest) -> dict:
+    def unlock_account(
+        req: UnlockAccountRequest, x_verification_token: str | None = Header(default=None)
+    ) -> dict:
         refused = {
             "unlocked": False,
             "reason": "verification_required",
             "next_step": "Do not unlock. The caller must pass verify_identity for this same user first.",
         }
-        token = state.tokens.get(req.verification_token)
+        presented = x_verification_token or req.verification_token or ""
+        token = state.tokens.get(presented)
         if token is None or token.user_id != req.user_id or token.expires_at <= now():
             return refused
-        del state.tokens[req.verification_token]  # single use
+        del state.tokens[presented]  # single use
 
         emp = directory.get(req.user_id)
         if emp is None:

@@ -289,3 +289,23 @@ def test_disabled_account_never_unlocks_even_with_token(client, settings, clock)
     r = unlock(client, "u017", token)
     assert r["unlocked"] is False and r["reason"] == "account_disabled"
     assert client.app.state.directory.get("u017").account_status == "disabled"
+
+
+def test_unlock_accepts_token_in_header(client, settings, clock):
+    token = verified_token(client, settings, clock, "u001")
+    r = client.post(
+        "/tools/unlock_account",
+        json={"user_id": "u001"},
+        headers={**HEADERS, "X-Verification-Token": token},
+    ).json()
+    assert r["unlocked"] is True
+
+
+def test_header_token_for_a_cannot_unlock_b(client, settings, clock):
+    token_a = verified_token(client, settings, clock, "u001")
+    r = client.post(
+        "/tools/unlock_account",
+        json={"user_id": "u006"},
+        headers={**HEADERS, "X-Verification-Token": token_a},
+    ).json()
+    assert r["unlocked"] is False
