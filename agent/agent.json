@@ -2,7 +2,7 @@
   "name": "IT helpdesk unlock (es-MX / en)",
   "conversation_config": {
     "agent": {
-      "first_message": "Mesa de ayuda de TI, le atiende Andrea. ¿En qué le puedo ayudar?",
+      "first_message": "Gracias por llamar a soporte de TI, le atiende Andrea. ¿En qué le puedo ayudar?",
       "language": "es",
       "dynamic_variables": {
         "dynamic_variable_placeholders": {
@@ -35,7 +35,7 @@
         "overrides": {
           "agent": {
             "language": "en",
-            "first_message": "IT help desk, this is Andrea. How can I help you?"
+            "first_message": "Thanks for calling IT support, this is Andrea. How can I help you?"
           }
         }
       }

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 
-FIRST_MESSAGE = "Mesa de ayuda de TI, le atiende Andrea. ¿En qué le puedo ayudar?"
+FIRST_MESSAGE = "Gracias por llamar a soporte de TI, le atiende Andrea. ¿En qué le puedo ayudar?"
 
 # Models used by ElevenLabs to play the caller and to judge simulations.
 # Pinned so baseline and rerun are judged the same way.
