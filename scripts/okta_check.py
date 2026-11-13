@@ -4,7 +4,7 @@ Usage:
   python scripts/okta_check.py              # find each push employee's Okta user and push factor
   python scripts/okta_check.py --push u019  # also send a real push and wait for the result
 
-Reads OKTA_ORG_URL and OKTA_API_TOKEN from .env. Never prints the token.
+Reads OKTA_ORG_URL and OKTA_CLIENT_ID from .env and the private key file. Never prints secrets.
 """
 
 from __future__ import annotations
@@ -18,7 +18,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.config import Settings  # noqa: E402
 from app.directory import Directory  # noqa: E402
-from app.okta import OktaError, OktaPushClient  # noqa: E402
+from app.okta import OktaError  # noqa: E402
+from app.okta_auth import build_okta_client  # noqa: E402
 
 
 def main() -> None:
@@ -27,9 +28,9 @@ def main() -> None:
     args = parser.parse_args()
 
     settings = Settings.from_env()
-    if not (settings.okta_org_url and settings.okta_api_token):
-        sys.exit("Set OKTA_ORG_URL and OKTA_API_TOKEN in .env first.")
-    client = OktaPushClient(settings.okta_org_url, settings.okta_api_token)
+    if not (settings.okta_org_url and settings.okta_client_id):
+        sys.exit("Set OKTA_ORG_URL and OKTA_CLIENT_ID in .env first.")
+    client = build_okta_client(settings)
     directory = Directory.load(settings.directory_path)
     push_people = [e for e in directory._by_id.values() if e.factor == "okta_push"]
 

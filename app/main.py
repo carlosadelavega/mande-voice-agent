@@ -25,7 +25,8 @@ from pydantic import BaseModel, model_validator
 
 from .config import Settings
 from .directory import Directory, Employee
-from .okta import OktaError, OktaPushClient, PushClient
+from .okta import OktaError, PushClient
+from .okta_auth import build_okta_client
 from .verifier import TotpVerifier, Verifier, normalize_code
 
 
@@ -118,8 +119,11 @@ def create_app(
 ) -> FastAPI:
     directory = directory or Directory.load(settings.directory_path)
     verifier = verifier or TotpVerifier(settings.totp_master_key, now, settings.totp_valid_window)
-    if push_client is None and settings.okta_org_url and settings.okta_api_token:
-        push_client = OktaPushClient(settings.okta_org_url, settings.okta_api_token)
+    if push_client is None and settings.okta_org_url and settings.okta_client_id:
+        try:
+            push_client = build_okta_client(settings)
+        except OktaError as e:  # e.g. key file missing: push employees fail closed
+            log.error("okta disabled: %s", e)
     state = State()
 
     app = FastAPI(title="IT helpdesk unlock tools")

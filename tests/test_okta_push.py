@@ -143,6 +143,12 @@ def okta_transport(verify_body: dict, poll_bodies: list[dict], seen: list[httpx.
     return httpx.MockTransport(handler)
 
 
+class StaticAuth(httpx.Auth):
+    def auth_flow(self, request):
+        request.headers["Authorization"] = "Bearer tok"
+        yield request
+
+
 POLL = f"{ORG}/api/v1/users/00u1/factors/opf1/transactions/v2t1"
 
 
@@ -150,12 +156,12 @@ def test_client_starts_number_matching_push():
     seen: list[httpx.Request] = []
     body = {"factorResult": "WAITING", "_links": {"poll": {"href": POLL}},
             "_embedded": {"challenge": {"correctAnswer": 37}}}
-    c = OktaPushClient(ORG, "tok", transport=okta_transport(body, [], seen))
+    c = OktaPushClient(ORG, StaticAuth(), transport=okta_transport(body, [], seen))
     ch = c.start_push("sebastian.lozano@example.com")
     assert ch.poll_url == POLL and ch.number == 37
     verify_req = [r for r in seen if r.url.path.endswith("/verify")][0]
     assert json.loads(verify_req.content) == {"useNumberMatchingChallenge": True}
-    assert verify_req.headers["Authorization"] == "SSWS tok"
+    assert verify_req.headers["Authorization"] == "Bearer tok"
     assert verify_req.headers["User-Agent"]
 
 
@@ -164,13 +170,13 @@ def test_client_gets_number_from_poll_when_verify_lacks_it():
     body = {"factorResult": "WAITING", "_links": {"poll": {"href": POLL}}}
     polls = [{"factorResult": "WAITING", "_embedded": {"challenge": {"correctAnswer": 91}}},
              {"factorResult": "SUCCESS"}]
-    c = OktaPushClient(ORG, "tok", transport=okta_transport(body, polls, seen))
+    c = OktaPushClient(ORG, StaticAuth(), transport=okta_transport(body, polls, seen))
     assert c.start_push("sebastian.lozano@example.com").number == 91
     assert c.poll(POLL).result == "SUCCESS"
 
 
 def test_client_refuses_poll_links_outside_the_org():
-    c = OktaPushClient(ORG, "tok", transport=okta_transport({}, [], []))
+    c = OktaPushClient(ORG, StaticAuth(), transport=okta_transport({}, [], []))
     with pytest.raises(OktaError):
         c.poll("https://evil.example.com/steal")
 
@@ -178,6 +184,6 @@ def test_client_refuses_poll_links_outside_the_org():
 def test_client_errors_become_okta_error():
     def handler(request):
         return httpx.Response(401, json={"errorCode": "E0000011"})
-    c = OktaPushClient(ORG, "bad", transport=httpx.MockTransport(handler))
+    c = OktaPushClient(ORG, StaticAuth(), transport=httpx.MockTransport(handler))
     with pytest.raises(OktaError):
         c.start_push("sebastian.lozano@example.com")

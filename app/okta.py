@@ -6,8 +6,8 @@ Flow for one verification:
   3. tell the caller which number to tap (correctAnswer)
   4. GET the poll link until factorResult is SUCCESS, REJECTED or TIMEOUT
 
-The API token is an admin token and stays in .env on the server; it never
-appears in the agent's config.
+Authentication is a scoped OAuth token with DPoP (see okta_auth.py). The
+private key stays on the server; nothing about Okta appears in the agent's config.
 """
 
 from __future__ import annotations
@@ -47,12 +47,12 @@ def _correct_answer(body: dict) -> int | None:
 
 
 class OktaPushClient:
-    def __init__(self, org_url: str, api_token: str, transport: httpx.BaseTransport | None = None):
+    def __init__(self, org_url: str, auth: httpx.Auth, transport: httpx.BaseTransport | None = None):
         self._org_url = org_url.rstrip("/")
         self._http = httpx.Client(
             base_url=self._org_url,
+            auth=auth,
             headers={
-                "Authorization": f"SSWS {api_token}",
                 "Accept": "application/json",
                 # Okta requires a User-Agent to verify push factors.
                 "User-Agent": "helpdesk-unlock-demo/1.0",

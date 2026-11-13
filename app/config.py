@@ -20,7 +20,8 @@ class Settings:
     token_ttl_seconds: int = 5 * 60
     totp_valid_window: int = 1  # accept the previous/next 30s step for speech latency
     okta_org_url: str | None = None  # e.g. https://integrator-1234567.okta.com
-    okta_api_token: str | None = None  # admin API token; server-side only
+    okta_client_id: str | None = None  # Okta API Services app (scoped OAuth)
+    okta_private_key_path: Path = ROOT / ".secrets" / "okta_service_app.pem"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -32,5 +33,6 @@ class Settings:
             totp_master_key=os.environ["TOTP_MASTER_KEY"],
             tool_shared_secret=os.environ["TOOL_SHARED_SECRET"],
             okta_org_url=os.environ.get("OKTA_ORG_URL") or None,
-            okta_api_token=os.environ.get("OKTA_API_TOKEN") or None,
+            okta_client_id=os.environ.get("OKTA_CLIENT_ID") or None,
+            okta_private_key_path=Path(os.environ.get("OKTA_PRIVATE_KEY_PATH") or ROOT / ".secrets" / "okta_service_app.pem"),
         )
