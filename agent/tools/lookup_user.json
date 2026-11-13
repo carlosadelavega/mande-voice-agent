@@ -1,0 +1,35 @@
+{
+  "type": "webhook",
+  "name": "lookup_user",
+  "description": "Find the calling employee in the company directory. Send either the employee number, or the first name plus surnames. Returns an internal user_id, the last two digits of the phone on file, and the account status.",
+  "response_timeout_secs": 10,
+  "api_schema": {
+    "url": "${TOOL_BASE_URL}/tools/lookup_user",
+    "method": "POST",
+    "request_headers": {
+      "X-Tool-Secret": {"secret_id": "${TOOL_SECRET_ID}"}
+    },
+    "request_body_schema": {
+      "type": "object",
+      "required": [],
+      "properties": {
+        "employee_number": {
+          "type": "string",
+          "description": "Employee number: two letters and four digits, letters uppercase, no spaces, e.g. 'BX4821'. Leave empty if searching by name."
+        },
+        "first_name": {
+          "type": "string",
+          "description": "The caller's full first name, including compound names ('María José', 'Juan Carlos'), with accents as normally written."
+        },
+        "first_surname": {
+          "type": "string",
+          "description": "First surname (apellido paterno), with accents, e.g. 'Hernández'. Compound surnames stay whole, e.g. 'Díaz de León'."
+        },
+        "second_surname": {
+          "type": "string",
+          "description": "Second surname (apellido materno), with accents, e.g. 'Villaseñor'. Leave empty if the caller has not given it or has only one surname."
+        }
+      }
+    }
+  }
+}

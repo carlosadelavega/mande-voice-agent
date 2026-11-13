@@ -12,37 +12,74 @@ can't unlock anything:
 
 from __future__ import annotations
 
+import functools
 import hmac
+import logging
 import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Callable
 
 from fastapi import Depends, FastAPI, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from .config import Settings
 from .directory import Directory
 from .verifier import TotpVerifier, Verifier, normalize_code
 
 
-class LookupUserRequest(BaseModel):
+log = logging.getLogger("helpdesk")
+
+
+class ToolRequest(BaseModel):
+    """Accepts the parameters either flat or wrapped as {"parameters": {...}}."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _unwrap(cls, data):
+        if isinstance(data, dict) and isinstance(data.get("parameters"), dict):
+            return data["parameters"]
+        return data
+
+
+class LookupUserRequest(ToolRequest):
     employee_number: str | None = None
     first_name: str | None = None
     first_surname: str | None = None
     second_surname: str | None = None
 
 
-class VerifyIdentityRequest(BaseModel):
+class VerifyIdentityRequest(ToolRequest):
     user_id: str
     code: str
 
 
-class UnlockAccountRequest(BaseModel):
+class UnlockAccountRequest(ToolRequest):
     user_id: str
     # Normally sent as the X-Verification-Token header from a secret__ dynamic
     # variable so it never reaches the LLM; the body field is a fallback.
     verification_token: str | None = None
+
+
+def _logged(fn):
+    """Log each tool call with secrets redacted, for debugging live calls."""
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        result = fn(*args, **kwargs)
+        req = kwargs.get("req")
+        params = req.model_dump(exclude_none=True) if req is not None else {}
+        if "code" in params:
+            params["code"] = f"<{len(normalize_code(params['code']))} digits>"
+        if "verification_token" in params:
+            params["verification_token"] = "<body token>"
+        if kwargs.get("x_verification_token"):
+            params["header_token"] = True
+        shown = {k: v for k, v in result.items() if k not in ("verification_token", "next_step")}
+        log.info("%s %s -> %s", fn.__name__, params, shown)
+        return result
+
+    return wrapper
 
 
 @dataclass
@@ -89,6 +126,7 @@ def create_app(
         return {"status": "ok"}
 
     @app.post("/tools/lookup_user", dependencies=tools)
+    @_logged
     def lookup_user(req: LookupUserRequest) -> dict:
         if req.employee_number:
             emp = directory.find_by_employee_number(req.employee_number)
@@ -134,6 +172,7 @@ def create_app(
         return result
 
     @app.post("/tools/verify_identity", dependencies=tools)
+    @_logged
     def verify_identity(req: VerifyIdentityRequest) -> dict:
         emp = directory.get(req.user_id)
         if emp is None:
@@ -179,6 +218,7 @@ def create_app(
         }
 
     @app.post("/tools/unlock_account", dependencies=tools)
+    @_logged
     def unlock_account(
         req: UnlockAccountRequest, x_verification_token: str | None = Header(default=None)
     ) -> dict:
@@ -222,4 +262,5 @@ def create_app(
 
 def build_app() -> FastAPI:
     """Entry point for uvicorn: `uvicorn app.main:build_app --factory`."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     return create_app(Settings.from_env())

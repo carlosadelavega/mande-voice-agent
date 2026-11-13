@@ -1,0 +1,50 @@
+{
+  "name": "IT helpdesk unlock (es-MX / en)",
+  "conversation_config": {
+    "agent": {
+      "first_message": "Mesa de ayuda de TI, le atiende Andrea. ¿En qué le puedo ayudar?",
+      "language": "es",
+      "dynamic_variables": {
+        "dynamic_variable_placeholders": {
+          "secret__verification_token": "none"
+        }
+      },
+      "prompt": {
+        "prompt": "${PROMPT}",
+        "llm": "claude-sonnet-5-5",
+        "temperature": 0,
+        "tool_ids": "${TOOL_IDS}",
+        "built_in_tools": {
+          "end_call": {
+            "type": "system",
+            "name": "end_call",
+            "description": "",
+            "params": {"system_tool_type": "end_call"}
+          },
+          "language_detection": {
+            "type": "system",
+            "name": "language_detection",
+            "description": "",
+            "params": {"system_tool_type": "language_detection", "only_at_conversation_start": false}
+          }
+        }
+      }
+    },
+    "language_presets": {
+      "en": {
+        "overrides": {
+          "agent": {
+            "language": "en",
+            "first_message": "IT help desk, this is Andrea. How can I help you?"
+          }
+        }
+      }
+    },
+    "tts": {
+      "model_id": "eleven_v4_turbo"
+    },
+    "turn": {
+      "turn_eagerness": "patient"
+    }
+  }
+}

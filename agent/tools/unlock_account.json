@@ -1,0 +1,24 @@
+{
+  "type": "webhook",
+  "name": "unlock_account",
+  "description": "Unlock the account of the employee who just passed verify_identity. Only works for that same user_id, right after a successful verification.",
+  "response_timeout_secs": 10,
+  "api_schema": {
+    "url": "${TOOL_BASE_URL}/tools/unlock_account",
+    "method": "POST",
+    "request_headers": {
+      "X-Tool-Secret": {"secret_id": "${TOOL_SECRET_ID}"},
+      "X-Verification-Token": {"variable_name": "secret__verification_token"}
+    },
+    "request_body_schema": {
+      "type": "object",
+      "required": ["user_id"],
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "The user_id that just passed verify_identity."
+        }
+      }
+    }
+  }
+}

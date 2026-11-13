@@ -1,0 +1,9 @@
+{
+  "secret_id": "8sLTVCfL0NMVHHQAPQAM",
+  "tools": {
+    "lookup_user": "tool_7001m79dqr17f7t9d68setdn7rw0",
+    "verify_identity": "tool_6701m79dqrbyf5hrpjmpnr6azmw1",
+    "unlock_account": "tool_0301m79dqrqqe17bct5tjp37etaf"
+  },
+  "agent_id": "agent_7001m79dqsaqfjzt36v7bffz5mma"
+}

@@ -309,3 +309,13 @@ def test_header_token_for_a_cannot_unlock_b(client, settings, clock):
         headers={**HEADERS, "X-Verification-Token": token_a},
     ).json()
     assert r["unlocked"] is False
+
+
+def test_parameters_wrapper_is_accepted(client):
+    emp = client.app.state.directory.get("u001")
+    r = client.post(
+        "/tools/lookup_user",
+        json={"tool_call_id": "c1", "parameters": {"employee_number": emp.employee_number}},
+        headers=HEADERS,
+    ).json()
+    assert r["found"] is True and r["user_id"] == "u001"
