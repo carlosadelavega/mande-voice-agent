@@ -24,7 +24,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, model_validator
 
 from .config import Settings
-from .directory import Directory
+from .directory import Directory, Employee
+from .okta import OktaError, OktaPushClient, PushClient
 from .verifier import TotpVerifier, Verifier, normalize_code
 
 
@@ -51,7 +52,8 @@ class LookupUserRequest(ToolRequest):
 
 class VerifyIdentityRequest(ToolRequest):
     user_id: str
-    code: str
+    # Required for TOTP employees; omitted for Okta Verify push employees.
+    code: str | None = None
 
 
 class UnlockAccountRequest(ToolRequest):
@@ -95,9 +97,16 @@ class _Token:
 
 
 @dataclass
+class _Push:
+    poll_url: str
+    number: int | None
+
+
+@dataclass
 class State:
     attempts: dict[str, _Attempts] = field(default_factory=dict)
     tokens: dict[str, _Token] = field(default_factory=dict)
+    pushes: dict[str, _Push] = field(default_factory=dict)  # pending push per user_id
 
 
 def create_app(
@@ -105,9 +114,12 @@ def create_app(
     directory: Directory | None = None,
     verifier: Verifier | None = None,
     now: Callable[[], float] = time.time,
+    push_client: PushClient | None = None,
 ) -> FastAPI:
     directory = directory or Directory.load(settings.directory_path)
     verifier = verifier or TotpVerifier(settings.totp_master_key, now, settings.totp_valid_window)
+    if push_client is None and settings.okta_org_url and settings.okta_api_token:
+        push_client = OktaPushClient(settings.okta_org_url, settings.okta_api_token)
     state = State()
 
     app = FastAPI(title="IT helpdesk unlock tools")
@@ -167,6 +179,11 @@ def create_app(
             result["next_step"] = "This account is disabled and cannot be unlocked by phone. Transfer to a human agent."
         elif emp.account_status == "active":
             result["next_step"] = "The account is not locked. Tell the caller; no unlock is needed."
+        elif emp.factor == "okta_push":
+            result["next_step"] = (
+                "This employee verifies with an Okta Verify push, not a code. Do not ask for a code. "
+                "Call verify_identity with only the user_id, then follow its next_step."
+            )
         else:
             result["next_step"] = "Ask the caller for the 6-digit code from their authenticator app."
         return result
@@ -185,6 +202,9 @@ def create_app(
         if att.locked_until and att.locked_until <= t:
             state.attempts[emp.user_id] = att = _Attempts()
 
+        if emp.factor == "okta_push":
+            return _verify_push(emp, att, t)
+
         code = normalize_code(req.code)
         if len(code) != 6:
             # Malformed input can't match, so it doesn't cost an attempt.
@@ -196,26 +216,81 @@ def create_app(
             }
 
         if verifier.verify(emp, code):
-            att.failures = 0
-            token = secrets.token_urlsafe(24)
-            state.tokens[token] = _Token(user_id=emp.user_id, expires_at=t + settings.token_ttl_seconds)
-            return {
-                "verified": True,
-                "verification_token": token,
-                "expires_in_seconds": settings.token_ttl_seconds,
-                "next_step": "Identity verified. Call unlock_account now.",
-            }
+            return _verified(emp, att, t)
+        return _failed(att, t, "wrong_code",
+                       "The code is wrong. Ask the caller to wait for a fresh code and read it again.")
 
+    def _verified(emp: Employee, att: _Attempts, t: float) -> dict:
+        att.failures = 0
+        token = secrets.token_urlsafe(24)
+        state.tokens[token] = _Token(user_id=emp.user_id, expires_at=t + settings.token_ttl_seconds)
+        return {
+            "verified": True,
+            "verification_token": token,
+            "expires_in_seconds": settings.token_ttl_seconds,
+            "next_step": "Identity verified. Call unlock_account now.",
+        }
+
+    def _failed(att: _Attempts, t: float, reason: str, next_step: str) -> dict:
         att.failures += 1
         if att.failures >= settings.max_attempts:
             att.locked_until = t + settings.lockout_seconds
             return _locked_out_response()
         return {
             "verified": False,
-            "reason": "wrong_code",
+            "reason": reason,
             "attempts_left": settings.max_attempts - att.failures,
-            "next_step": "The code is wrong. Ask the caller to wait for a fresh code and read it again.",
+            "next_step": next_step,
         }
+
+    def _verify_push(emp: Employee, att: _Attempts, t: float) -> dict:
+        unavailable = {
+            "verified": False,
+            "reason": "factor_unavailable",
+            "next_step": "The verification service is not available. Do not unlock. Tell the caller and "
+                         "offer a human colleague from IT.",
+        }
+        if push_client is None or not emp.okta_login:
+            return unavailable
+        try:
+            pending = state.pushes.get(emp.user_id)
+            if pending is None:
+                challenge = push_client.start_push(emp.okta_login)
+                state.pushes[emp.user_id] = _Push(challenge.poll_url, challenge.number)
+                tap = f"tap the number {challenge.number}" if challenge.number is not None else "approve it"
+                return {
+                    "verified": False,
+                    "status": "push_sent",
+                    "number": challenge.number,
+                    "next_step": f"Tell the caller you sent a notification to their Okta Verify app and that "
+                                 f"they must {tap}. Wait until they say they did it, then call "
+                                 f"verify_identity again with the same user_id.",
+                }
+            status = push_client.poll(pending.poll_url)
+        except OktaError as e:
+            log.warning("okta error for %s: %s", emp.user_id, e)
+            state.pushes.pop(emp.user_id, None)
+            return unavailable
+
+        if status.result == "WAITING":
+            number = pending.number if pending.number is not None else status.number
+            return {
+                "verified": False,
+                "status": "waiting",
+                "number": number,
+                "next_step": f"Not approved yet. Remind the caller to tap {number} in Okta Verify, wait until "
+                             f"they say they did, then call verify_identity again.",
+            }
+        state.pushes.pop(emp.user_id, None)
+        if status.result == "SUCCESS":
+            return _verified(emp, att, t)
+        if status.result == "REJECTED":
+            return _failed(att, t, "push_rejected",
+                           "The push was rejected or the wrong number was tapped. Ask the caller if they "
+                           "want a new notification; if yes, call verify_identity again.")
+        return _failed(att, t, "push_expired",
+                       "The push expired before it was approved. Ask the caller if they want a new "
+                       "notification; if yes, call verify_identity again.")
 
     @app.post("/tools/unlock_account", dependencies=tools)
     @_logged

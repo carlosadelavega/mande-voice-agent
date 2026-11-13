@@ -7,7 +7,9 @@
       "first_surname": "Hernández",
       "second_surname": "Villaseñor",
       "phone": "+52 33 0000 1897",
-      "account_status": "locked"
+      "account_status": "locked",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u002",
@@ -16,7 +18,9 @@
       "first_surname": "Hernández",
       "second_surname": "Ruiz",
       "phone": "+52 33 0000 8088",
-      "account_status": "locked"
+      "account_status": "locked",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u003",
@@ -25,7 +29,9 @@
       "first_surname": "Hernández",
       "second_surname": "Ortega",
       "phone": "+52 33 0000 1952",
-      "account_status": "active"
+      "account_status": "active",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u004",
@@ -34,7 +40,9 @@
       "first_surname": "García",
       "second_surname": "López",
       "phone": "+52 33 0000 3101",
-      "account_status": "locked"
+      "account_status": "locked",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u005",
@@ -43,7 +51,9 @@
       "first_surname": "García",
       "second_surname": "López",
       "phone": "+52 33 0000 2801",
-      "account_status": "active"
+      "account_status": "active",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u006",
@@ -52,7 +62,9 @@
       "first_surname": "Ramírez",
       "second_surname": "Núñez",
       "phone": "+52 33 0000 4305",
-      "account_status": "locked"
+      "account_status": "locked",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u007",
@@ -61,7 +73,9 @@
       "first_surname": "Treviño",
       "second_surname": "Garza",
       "phone": "+52 33 0000 8800",
-      "account_status": "active"
+      "account_status": "active",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u008",
@@ -70,7 +84,9 @@
       "first_surname": "Peña",
       "second_surname": "Castañeda",
       "phone": "+52 33 0000 4595",
-      "account_status": "locked"
+      "account_status": "locked",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u009",
@@ -79,7 +95,9 @@
       "first_surname": "Ibarra",
       "second_surname": "Zúñiga",
       "phone": "+52 33 0000 7810",
-      "account_status": "locked"
+      "account_status": "locked",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u010",
@@ -88,7 +106,9 @@
       "first_surname": "Ochoa",
       "second_surname": "Muñoz",
       "phone": "+52 33 0000 0395",
-      "account_status": "locked"
+      "account_status": "locked",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u011",
@@ -97,7 +117,9 @@
       "first_surname": "Velázquez",
       "second_surname": "Robles",
       "phone": "+52 33 0000 3816",
-      "account_status": "active"
+      "account_status": "active",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u012",
@@ -106,7 +128,9 @@
       "first_surname": "Saldaña",
       "second_surname": "Echeverría",
       "phone": "+52 33 0000 6891",
-      "account_status": "locked"
+      "account_status": "locked",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u013",
@@ -115,7 +139,9 @@
       "first_surname": "Moctezuma",
       "second_surname": "Quiñones",
       "phone": "+52 33 0000 1285",
-      "account_status": "locked"
+      "account_status": "locked",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u014",
@@ -124,7 +150,9 @@
       "first_surname": "Cuauhtémoc",
       "second_surname": "Ayala",
       "phone": "+52 33 0000 5861",
-      "account_status": "locked"
+      "account_status": "locked",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u015",
@@ -133,7 +161,9 @@
       "first_surname": "Johnson",
       "second_surname": null,
       "phone": "+52 33 0000 7822",
-      "account_status": "locked"
+      "account_status": "locked",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u016",
@@ -142,7 +172,9 @@
       "first_surname": "Díaz de León",
       "second_surname": "Martínez",
       "phone": "+52 33 0000 6078",
-      "account_status": "locked"
+      "account_status": "locked",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u017",
@@ -151,7 +183,9 @@
       "first_surname": "Ávila",
       "second_surname": "Sánchez",
       "phone": "+52 33 0000 9591",
-      "account_status": "disabled"
+      "account_status": "disabled",
+      "factor": "totp",
+      "okta_login": null
     },
     {
       "user_id": "u018",
@@ -160,7 +194,20 @@
       "first_surname": "Cervantes",
       "second_surname": "Uribe",
       "phone": "+52 33 0000 0961",
-      "account_status": "active"
+      "account_status": "active",
+      "factor": "totp",
+      "okta_login": null
+    },
+    {
+      "user_id": "u019",
+      "employee_number": "HV3581",
+      "first_name": "Sebastián",
+      "first_surname": "Lozano",
+      "second_surname": "Guerrero",
+      "phone": "+52 33 0000 6676",
+      "account_status": "locked",
+      "factor": "okta_push",
+      "okta_login": "sebastian.lozano@example.com"
     }
   ]
 }

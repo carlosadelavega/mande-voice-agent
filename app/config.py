@@ -19,6 +19,8 @@ class Settings:
     lockout_seconds: int = 15 * 60
     token_ttl_seconds: int = 5 * 60
     totp_valid_window: int = 1  # accept the previous/next 30s step for speech latency
+    okta_org_url: str | None = None  # e.g. https://integrator-1234567.okta.com
+    okta_api_token: str | None = None  # admin API token; server-side only
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -29,4 +31,6 @@ class Settings:
         return cls(
             totp_master_key=os.environ["TOTP_MASTER_KEY"],
             tool_shared_secret=os.environ["TOOL_SHARED_SECRET"],
+            okta_org_url=os.environ.get("OKTA_ORG_URL") or None,
+            okta_api_token=os.environ.get("OKTA_API_TOKEN") or None,
         )

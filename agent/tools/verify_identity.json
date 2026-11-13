@@ -1,7 +1,7 @@
 {
   "type": "webhook",
   "name": "verify_identity",
-  "description": "Check the 6-digit code from the caller's authenticator app. Call this after lookup_user found the caller. On success the server issues a verification that unlock_account uses automatically.",
+  "description": "Verify the caller's identity after lookup_user found them. For most employees, send the 6-digit code from their authenticator app. If lookup_user said the employee uses an Okta Verify push, send only the user_id and follow next_step (call it again after the caller approves). On success the server issues a verification that unlock_account uses automatically.",
   "response_timeout_secs": 10,
   "assignments": [
     {
@@ -15,11 +15,15 @@
     "url": "${TOOL_BASE_URL}/tools/verify_identity",
     "method": "POST",
     "request_headers": {
-      "X-Tool-Secret": {"secret_id": "${TOOL_SECRET_ID}"}
+      "X-Tool-Secret": {
+        "secret_id": "${TOOL_SECRET_ID}"
+      }
     },
     "request_body_schema": {
       "type": "object",
-      "required": ["user_id", "code"],
+      "required": [
+        "user_id"
+      ],
       "properties": {
         "user_id": {
           "type": "string",
@@ -27,7 +31,7 @@
         },
         "code": {
           "type": "string",
-          "description": "Exactly 6 digits, digits only, e.g. '048213'. Convert spoken numbers to digits and keep leading zeros."
+          "description": "Exactly 6 digits, digits only, e.g. '048213'. Convert spoken numbers to digits and keep leading zeros. Leave empty for Okta Verify push employees."
         }
       }
     }

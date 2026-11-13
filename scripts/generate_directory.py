@@ -47,6 +47,13 @@ PEOPLE = [
     ("Miguel Ángel", "Cervantes", "Uribe", "active"),
 ]
 
+# Employees who verify with an Okta Verify push instead of a TOTP code.
+# Appended after PEOPLE so the employee numbers above stay the same.
+# okta_login must match a (synthetic) user in your Okta org.
+PUSH_PEOPLE = [
+    ("Sebastián", "Lozano", "Guerrero", "locked", "sebastian.lozano@example.com"),
+]
+
 # Letters that sound alike in Spanish (B/V, S/C/Z, M/N, I/Y, G/J) are kept on
 # purpose, so spelling an employee number aloud is a real test.
 LETTERS = "ABCDEFGHJKLMNPRSTUVXYZ"
@@ -56,7 +63,9 @@ def main() -> None:
     rng = random.Random(SEED)
     seen: set[str] = set()
     employees = []
-    for i, (first, sur1, sur2, status) in enumerate(PEOPLE, start=1):
+    rows = [(*p, "totp", None) for p in PEOPLE] + [(f, s1, s2, st, "okta_push", login)
+                                                   for f, s1, s2, st, login in PUSH_PEOPLE]
+    for i, (first, sur1, sur2, status, factor, okta_login) in enumerate(rows, start=1):
         while True:
             emp_no = "".join(rng.choices(LETTERS, k=2)) + "".join(rng.choices("0123456789", k=4))
             if emp_no not in seen:
@@ -72,6 +81,8 @@ def main() -> None:
                 "second_surname": sur2,
                 "phone": phone,
                 "account_status": status,
+                "factor": factor,
+                "okta_login": okta_login,
             }
         )
 

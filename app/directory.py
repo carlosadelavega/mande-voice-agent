@@ -35,6 +35,8 @@ class Employee:
     second_surname: str | None
     phone: str
     account_status: str  # "active" | "locked" | "disabled"
+    factor: str = "totp"  # "totp" | "okta_push"
+    okta_login: str | None = None  # Okta username, for okta_push employees
 
     @property
     def masked_phone(self) -> str:
