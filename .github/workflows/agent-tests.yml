@@ -1,0 +1,47 @@
+# Runs the ElevenLabs agent tests against the deployed agent. Manual only,
+# because every run spends ElevenLabs credits (about 100 per Tool Call test,
+# 90 per Next reply test and 400 per simulation, times the repeat count).
+# The tools are mocked or skipped in these tests, so no tunnel is needed.
+# Needs the repository secret ELEVENLABS_API_KEY.
+name: Agent tests (manual, spends credits)
+
+on:
+  workflow_dispatch:
+    inputs:
+      cases:
+        description: "Case IDs, space separated (empty runs all 15, about 4,000 credits per repeat)"
+        default: "N1 O1"
+        required: false
+      repeat:
+        description: "Runs per test"
+        default: "1"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  agent-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run agent tests
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          CASES: ${{ inputs.cases }}
+          REPEAT: ${{ inputs.repeat }}
+        run: |
+          python scripts/run_tests.py --label "ci-${GITHUB_RUN_ID}" --repeat "$REPEAT" $CASES
+          python scripts/check_transcripts.py "ci-${GITHUB_RUN_ID}"
+          cat "evals/results/ci-${GITHUB_RUN_ID}.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent-test-results
+          path: evals/results/ci-*

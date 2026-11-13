@@ -1,0 +1,43 @@
+# Runs on every push and pull request. Free: no ElevenLabs credits, no secrets.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  server-tests:
+    name: Server rules (pytest, Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run pytest (tools, push flow, Okta OAuth and DPoP against a mock Okta)
+        run: pytest -q
+
+  no-secrets-committed:
+    name: No secrets in the repo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail if an env file or private key is tracked
+        run: |
+          found=$(git ls-files | grep -E '(^|/)\.env$|(^|/)\.env\.[^e]|\.pem$|^\.secrets/' || true)
+          if [ -n "$found" ]; then
+            echo "These files must not be committed:"; echo "$found"; exit 1
+          fi
+          if git grep -nE 'BEGIN [A-Z ]*PRIVATE KEY' -- . ':!.github/workflows/ci.yml'; then
+            echo "A private key is committed."; exit 1
+          fi
+          echo "OK"

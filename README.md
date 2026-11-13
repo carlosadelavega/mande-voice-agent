@@ -152,6 +152,8 @@ python scripts/okta_check.py              # finds the user and the push factor
 python scripts/okta_check.py --push u019  # sends a real push and waits for it
 ```
 
+**On GitHub.** Every push runs `pytest` on Python 3.12 and the latest Python, plus a check that no `.env` file or private key is committed. This is free and needs no secrets. The agent tests spend credits, so they only run by hand: in the Actions tab, run "Agent tests (manual, spends credits)" and choose the cases and repeat count (the default, N1 and O1 once, costs about 200 credits). It needs a repository secret `ELEVENLABS_API_KEY`, and the results appear in the run summary and as a downloadable file.
+
 `data/directory.json` is synthetic and safe to commit. TOTP secrets are not stored in it; they are derived from `TOTP_MASTER_KEY` at runtime. `scripts/generate_directory.py` rebuilds it.
 
 ## Limitations
@@ -178,6 +180,7 @@ This project was built with Claude Code (Anthropic's coding agent) working in th
 ## Repository layout
 
 ```
+.github/          CI: pytest on every push; agent tests by hand
 agent/            prompt, tool configs, agent config (pushed by scripts/push_agent.py)
 app/              FastAPI service: directory, TOTP verifier, Okta push and OAuth client, the three tools
 data/             synthetic employee directory
