@@ -4,7 +4,7 @@ Locked accounts are one of the most common reasons people call an IT helpdesk, a
 
 A phone agent on ElevenLabs Agents takes the call in Mexican Spanish or English and unlocks the account. It never unlocks because a caller sounds right. The caller reads a 6-digit code from their authenticator app, or approves an Okta Verify push by tapping the number the agent tells them, and a small FastAPI service checks it and decides. The language model handles the conversation; it is never the one that decides who gets in.
 
-Around the agent sits a regression suite of 15 tests written for how Mexican callers actually talk (codes read in pairs, "¿Bueno?", "mande", Spanglish, compound surnames) plus security cases. Each test runs several times and is reported as a pass rate, before and after each fix. Manual calls and the suite turned up four real problems: three were fixed and measured, one is still open.
+Around the agent sits a regression suite of 15 tests written for how Mexican callers actually talk (codes read in pairs, "¿Bueno?", "mande", Spanglish, compound surnames) plus security cases. Each test runs several times and is reported as a pass rate, before and after each fix. Manual calls, the suite and a native speaker's read of the transcripts turned up five real problems: four were fixed and measured, one is still open.
 
 ## Results
 
@@ -34,18 +34,21 @@ Counted from the transcripts by a script, not by the LLM judge:
 | Check | Baseline | After fixes |
 |-------|----------|-------------|
 | Silent hang-ups (ends the call without a word to the caller) | 1/45 | 2/45 |
-| Gendered address to a caller who never stated their gender ("la escucho", "don Juan Carlos", "señora Itzel") | 9/45 | 0/45 |
+| Gender assumed before the caller gave a name or described themselves ("la escucho" in the first reply) | 5/45 | 0/45 |
+| "Ya lo encontré" with nothing to tell the caller what was found | 10/45 | 0/45 |
+| "Don Juan Carlos": respectful, but too familiar for a helpdesk | 2/45 | 0/45 |
 
-The gender check flags words like "señor" or "lo atiendo"; each flag was then read in context. Five baseline flags were not assumptions (a caller who introduced himself as "director", and "lo atiendo" about a third person), so they are not counted. The judge only looks for gender in G1, so in the baseline it passed P2 and S3 runs that called the caller "don Juan Carlos" or "señora Itzel" because of their first name.
+The script flags words; each flag was then read in context by a native speaker. Gendered address after the caller gives a first name ("señora Itzel") or describes themselves ("director") is what a human agent would do, so it is not counted as an assumption.
 
 ## What broke and what changed
 
-- **The agent guessed the caller's gender.** Spanish makes you pick "la escucho" or "lo escucho" when you say "I can hear you". The agent said "Sí, la escucho bien" to callers who never said who they were, in 5 of 6 first replies, and in other tests called people "don" or "señora" based on their first name. This showed up in the very first manual call, before any test existed, so it became test G1. Fix: the prompt says the caller's gender is unknown, asks for the neutral "le escucho", "le espero", and rules out titles like "señor" and "señora". G1 went from 0/3 to 3/3, and gendered address across all tests from 9/45 runs to 0/45.
+- **The agent guessed the caller's gender.** Spanish makes you pick "la escucho" or "lo escucho" when you say "I can hear you". The agent said "Sí, la escucho bien" to callers who had not said anything about themselves, in 5 of 6 first replies. This showed up in the very first manual call, before any test existed, so it became test G1. Fix: the prompt says the caller's gender is unknown and asks for the neutral "le escucho", "le espero". G1 went from 0/3 to 3/3, and the assumption across all tests from 5/45 runs to 0/45. The prompt also keeps the agent neutral after it hears a name, which is stricter than a human agent needs to be but costs nothing.
+- **The agent spoke from what its tool told it.** After the lookup, the agent said "Gracias, ya lo encontré" ("found it") in 10 of 45 runs. The tool had returned "found", so to the agent "lo" was the user record; the caller never heard about a record and has no idea what was found. The LLM judge failed one G1 run for this, reading it as a masculine form. A native speaker's review says the cause is the missing reference, not gender, but the problem is real either way. The fix, "encontré su registro", names what was found: 10/45 to 0/45.
 - **The agent assumed why you were calling.** When a caller only checked the line ("Bueno, sí, ¿me escucha?"), the agent jumped to "¿Me puede dar su número de empleado?". Fix: a new first step asks how it can help, and asks for the employee number only after the caller says the account is locked. O1 went from 1/3 to 3/3.
 - **A noisy line stalled the push.** Found in a live call and fixed; see [Okta Verify push](#okta-verify-push).
 - **Still open: the agent sometimes hangs up in silence after a lockout.** After the third wrong code it can end the call without telling the caller anything (1 of 3 runs before, 2 of 3 after; the fixes above do not touch this path). The LLM judge passed two of these three runs, which is why there is a separate transcript check. A related case, hanging up on an unexpected tool result, was found while building the tests and fixed before the baseline.
 
-The number tests all passed from the start. The surprises were about manners and grammar, not digits, and three of the four came from a person listening to a real call, not from the suite.
+The number tests all passed from the start. The surprises were about manners and grammar, not digits. Three of the five came from a person listening to a real call, and one from a native speaker reading the transcripts, not from the suite.
 
 ## Design decisions
 
@@ -54,7 +57,7 @@ The number tests all passed from the start. The surprises were about manners and
 - **Unlock only.** Password resets and changing the phone or authenticator on file are the actions attackers want from a helpdesk. They stay with humans.
 - **Scoped access to Okta.** The server uses a token with two scopes and a role limited to one group, not an admin API token. See [How the server talks to Okta](#okta-verify-push).
 - **Tests sized to the budget.** A simulation costs about 400 credits and a Tool Call test about 100, so number handling, where an exact check works, uses the cheap kind, and only conversation quality uses simulations. A full run at 3 repeats costs about 12,000 credits, roughly a third of a month on the Starter plan. The open S2 issue was left documented rather than spending more runs on it, so the budget could go to the Okta work.
-- **Scripts over the judge where possible.** The LLM judge missed two of three silent hang-ups and does not look for gender outside G1, so both are also counted by a script over the transcripts.
+- **Scripts over the judge where possible, and a human over both for language.** The LLM judge missed two of three silent hang-ups and misread why "ya lo encontré" was wrong. A script now counts both over every transcript, and a native speaker decides what counts in Spanish.
 
 ## How it works
 
@@ -184,7 +187,7 @@ python scripts/okta_check.py --push u019  # sends a real push and waits for it
 
 - **The tests run on text, not audio.** Speech-to-text mistakes on names, accents or numbers over a bad line are not measured. Voice was checked with manual calls only.
 - **Small samples.** 3 runs per test. 3/3 means it did not fail in three tries, not that it never fails.
-- **The judge is an LLM and it makes mistakes.** It missed two of three silent hang-ups, and in one baseline run it read "ya lo encontré" ("found it", or "found you") as gendered. Where a check can be a script, it should be.
+- **The judge is an LLM and it makes mistakes.** It missed two of three silent hang-ups, and it called "ya lo encontré" a gender error when the real problem was a missing reference. Where a check can be a script, it should be, and Spanish usage needs a native speaker's review.
 - **Simulated callers are LLMs following a script.** Real callers ramble, interrupt and hang up.
 - **TOTP read aloud can be phished.** An attacker on another call could talk someone into reading their code. Voice is never treated as proof of identity, but a spoken code is a weak factor.
 - **A push proves the phone, not the person.** Number matching stops blind approvals: the number is only known to whoever is on the call with the agent. But it proves the caller holds the employee's unlocked phone, nothing more. Requiring Face ID or a fingerprint on the push looked like the next step; the Okta setting for it is enforced through sign-in policies, which do not apply to a push sent through the Factors API, and in testing no biometric prompt appeared. Factors called phishing-resistant (FastPass, passkeys) protect a website sign-in by binding it to the site's address; a phone call has no such address, so they do not fit this channel. The stronger option for a helpdesk is identity verification with an ID document and a live selfie, which Okta supports through third-party providers. It is not built here.
@@ -202,17 +205,9 @@ python scripts/okta_check.py --push u019  # sends a real push and waits for it
 
 ## Built with AI assistance
 
-> Draft for Carlos to review and edit.
-
-This project was built with Claude Code (Claude Opus 5.5) working in the repo, with me directing. The split:
+This project was built with Claude Code (Opus 5.5) working in the repo, with me directing. The split:
 
 - **Me:** the design plan and scope (unlock only, server-side enforcement, synthetic data, the test categories), the guardrails, every spending decision on test runs, the manual voice calls, reviewing the Spanish in the test scenarios as a native speaker, and the judgment calls on results.
-- **Where I changed the direction:**
-  - In the first call I caught the gendered "la escucho" and the agent assuming why I called. Both became tests before they were fixed.
-  - I chose a voice that fits a Mexican persona.
-  - In a live Okta call I found that background noise stalled the push.
-  - I asked for a scoped OAuth token instead of an admin API token.
-  - I chose to leave S2 documented and put the credits into the Okta work.
 - **Claude Code:** most of the code (service, tests, scripts, configs) and probing undocumented behavior with throwaway tests (parameter paths, test-mode tool results, the DPoP `%40` detail).
 
 ## Repository layout

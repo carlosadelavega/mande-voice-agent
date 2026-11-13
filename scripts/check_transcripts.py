@@ -7,9 +7,14 @@ Checks:
   - silent hang-ups: the agent calls end_call without saying anything to the
     caller in that turn (no agent message since the caller last spoke, and no
     system__message_to_speak on the end_call).
-  - gendered address: the agent uses a form that assumes the caller's gender
-    ("la escucho", "señor", "don", "bienvenida"...). "Ya lo encontré" is
-    counted separately, because "lo" can mean the record as well as the caller.
+  - gendered address: the agent uses a gendered form ("la escucho", "señor",
+    "bienvenida"...). These are flags to read in context: after the caller
+    gives a first name or describes themselves ("director"), gendered address
+    is normal, as it would be from a human agent. Only flags before that count
+    as an assumption.
+  - "don" / "doña": respectful but too familiar for a helpdesk call.
+  - "ya lo encontré": the agent speaking from its tool result ("user found");
+    the caller has no idea what was found.
 """
 
 from __future__ import annotations
@@ -42,9 +47,10 @@ def silent_hangup(transcript: list[dict]) -> bool:
 
 
 GENDERED = re.compile(
-    r"\b(l[oa] escucho|l[oa] espero|l[oa] atiendo|l[oa] comunico|señora?|señorita|don|doña|"
+    r"\b(l[oa] escucho|l[oa] espero|l[oa] atiendo|l[oa] comunico|señora?|señorita|"
     r"bienvenid[oa]|segur[oa] que|list[oa] para)\b", re.IGNORECASE)
 FOUND_LO = re.compile(r"\bya l[oa] encontré\b", re.IGNORECASE)
+TOO_FAMILIAR = re.compile(r"\b(don|doña)\b", re.IGNORECASE)
 
 
 def gendered_forms(transcript: list[dict], pattern: re.Pattern = GENDERED) -> list[str]:
@@ -61,7 +67,7 @@ def main() -> None:
         record = json.loads((RESULTS / f"{label}.json").read_text())
         counts = defaultdict(lambda: [0, 0])  # case -> [silent, runs]
         gendered = defaultdict(set)  # form -> cases
-        gendered_runs = found_lo_runs = 0
+        gendered_runs = found_lo_runs = familiar_runs = 0
         for run in record["raw_runs"]:
             case = case_of.get(run["test_id"], run["test_id"])
             transcript = run.get("agent_responses") or []
@@ -71,6 +77,7 @@ def main() -> None:
             forms = gendered_forms(transcript)
             gendered_runs += bool(forms)
             found_lo_runs += bool(gendered_forms(transcript, FOUND_LO))
+            familiar_runs += bool(gendered_forms(transcript, TOO_FAMILIAR))
             for f in forms:
                 gendered[f].add(case)
         total = sum(c[0] for c in counts.values())
@@ -79,10 +86,11 @@ def main() -> None:
         for case, (silent, n) in counts.items():
             if silent:
                 print(f"  {case}: {silent}/{n}")
-        print(f"{label}: gendered address in {gendered_runs}/{runs} runs")
+        print(f"{label}: gendered forms to review in context in {gendered_runs}/{runs} runs")
         for form, cases in sorted(gendered.items()):
             print(f"  {form!r}: {', '.join(sorted(cases))}")
-        print(f"{label}: 'ya lo encontré' (ambiguous) in {found_lo_runs}/{runs} runs")
+        print(f"{label}: 'don'/'doña' (too familiar) in {familiar_runs}/{runs} runs")
+        print(f"{label}: 'ya lo encontré' (speaks from the tool result) in {found_lo_runs}/{runs} runs")
 
 
 if __name__ == "__main__":
