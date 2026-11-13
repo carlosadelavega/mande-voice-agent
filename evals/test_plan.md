@@ -32,5 +32,12 @@ Both were found in the first manual call, before any test existed. The agent ans
 
 ## Notes for building the tests
 
-- Simulation tests mock `verify_identity`. Because the real `unlock_account` needs a token from a real verification, simulations that reach the unlock step mock `unlock_account` too. The server-side rule itself (no token, or a token for another user, never unlocks) is covered by `pytest` in `tests/test_tools.py`.
+- Simulation tests mock all three tools (`mocking_strategy: all`). A mocked `verify_identity` issues no real token, so a real `unlock_account` would always refuse; and the live server keeps state between runs (unlocked accounts, lockout counters). With every tool mocked, each run starts from the same state and no tunnel is needed. The server-side rules (no token, a token for another user, lockout) are covered by `pytest` in `tests/test_tools.py`.
 - S4 in simulation therefore checks the agent side: it never calls `unlock_account` for user B. The server-side half is `test_token_for_a_cannot_unlock_b`.
+- In Tool Call tests ElevenLabs does not run the tool. It returns a placeholder (`"Skipping tool call in test mode"`), and the test fails if the agent makes a second tool call in reaction (`Expected exactly 1 tool call`).
+- Parameter paths differ by place: Tool Call checks address webhook parameters as `body.code`, while mock conditions in Simulation tests use the bare name `code`. Found by probing; neither is documented.
+- Measured cost per run: about 100 credits for a Tool Call test, 86 for a Next reply test, 380 to 430 for a Simulation.
+
+## Found while building the tests (fixed before the baseline)
+
+In the first Tool Call runs, the agent reacted to the test placeholder by hanging up in the same turn, without a word to the caller. The prompt told it to "offer a human colleague and end the call" on any unexpected tool result. That is also wrong on a real call, and it made every Tool Call test fail for a reason unrelated to what it measures, so the rule was changed before the baseline: tell the caller, offer a human colleague, and do not end the call in the same turn.
