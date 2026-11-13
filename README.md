@@ -1,6 +1,10 @@
 # Mande: a bilingual IT helpdesk voice agent, and the tests that found what broke
 
-A phone agent for an IT helpdesk that unlocks a locked work account, in Mexican Spanish or English, built on ElevenLabs Agents. It never unlocks because a caller sounds right: the caller reads a 6-digit code from their authenticator app, or approves an Okta Verify push by tapping the number the agent tells them, and a small FastAPI service checks it and decides. Around the agent sits a regression suite of 15 tests written for how Mexican callers actually talk (codes read in pairs, "¿Bueno?", "mande", Spanglish, compound surnames) plus security cases. Each test runs several times and is reported as a pass rate. A first manual call and the suite turned up three real problems; two were fixed and measured, one is still open.
+Locked accounts are one of the most common reasons people call an IT helpdesk, and the helpdesk phone line is a well-known way in for attackers who talk their way past an agent. This project automates that call for a Spanish-speaking workforce in Mexico without making the phone line easier to talk past.
+
+A phone agent on ElevenLabs Agents takes the call in Mexican Spanish or English and unlocks the account. It never unlocks because a caller sounds right. The caller reads a 6-digit code from their authenticator app, or approves an Okta Verify push by tapping the number the agent tells them, and a small FastAPI service checks it and decides. The language model handles the conversation; it is never the one that decides who gets in.
+
+Around the agent sits a regression suite of 15 tests written for how Mexican callers actually talk (codes read in pairs, "¿Bueno?", "mande", Spanglish, compound surnames) plus security cases. Each test runs several times and is reported as a pass rate, before and after each fix. Manual calls and the suite turned up four real problems: three were fixed and measured, one is still open.
 
 ## Results
 
@@ -30,14 +34,27 @@ Counted from the transcripts by a script, not by the LLM judge:
 | Check | Baseline | After fixes |
 |-------|----------|-------------|
 | Silent hang-ups (ends the call without a word to the caller) | 1/45 | 2/45 |
+| Gendered address to a caller who never stated their gender ("la escucho", "don Juan Carlos", "señora Itzel") | 9/45 | 0/45 |
+
+The gender check flags words like "señor" or "lo atiendo"; each flag was then read in context. Five baseline flags were not assumptions (a caller who introduced himself as "director", and "lo atiendo" about a third person), so they are not counted. The judge only looks for gender in G1, so in the baseline it passed P2 and S3 runs that called the caller "don Juan Carlos" or "señora Itzel" because of their first name.
 
 ## What broke and what changed
 
-- **The agent guessed the caller's gender.** Spanish makes you pick "la escucho" or "lo escucho" when you say "I can hear you". The agent said "Sí, la escucho bien" to callers who never said who they were, in 5 of 6 first replies. This showed up in the very first manual call, before any test existed, so it became test G1. Fix: the prompt says the caller's gender is unknown and asks for the neutral "le escucho", "le espero". G1 went from 0/3 to 3/3.
+- **The agent guessed the caller's gender.** Spanish makes you pick "la escucho" or "lo escucho" when you say "I can hear you". The agent said "Sí, la escucho bien" to callers who never said who they were, in 5 of 6 first replies, and in other tests called people "don" or "señora" based on their first name. This showed up in the very first manual call, before any test existed, so it became test G1. Fix: the prompt says the caller's gender is unknown, asks for the neutral "le escucho", "le espero", and rules out titles like "señor" and "señora". G1 went from 0/3 to 3/3, and gendered address across all tests from 9/45 runs to 0/45.
 - **The agent assumed why you were calling.** When a caller only checked the line ("Bueno, sí, ¿me escucha?"), the agent jumped to "¿Me puede dar su número de empleado?". Fix: a new first step asks how it can help, and asks for the employee number only after the caller says the account is locked. O1 went from 1/3 to 3/3.
+- **A noisy line stalled the push.** Found in a live call and fixed; see [Okta Verify push](#okta-verify-push).
 - **Still open: the agent sometimes hangs up in silence after a lockout.** After the third wrong code it can end the call without telling the caller anything (1 of 3 runs before, 2 of 3 after; the fixes above do not touch this path). The LLM judge passed two of these three runs, which is why there is a separate transcript check. A related case, hanging up on an unexpected tool result, was found while building the tests and fixed before the baseline.
 
-The number tests all passed from the start. The surprises were about manners and grammar, not digits.
+The number tests all passed from the start. The surprises were about manners and grammar, not digits, and three of the four came from a person listening to a real call, not from the suite.
+
+## Design decisions
+
+- **The server decides, not the model.** A prompt can be talked around; a server check cannot. Every rule that protects the account (verification, attempt limits, which account can be unlocked) lives in the FastAPI service, and the prompt only repeats them so the agent explains them well.
+- **The verification token never reaches the model.** If the model never sees it, a caller cannot trick the model into repeating or inventing it. ElevenLabs passes it from one tool to the next in a hidden variable.
+- **Unlock only.** Password resets and changing the phone or authenticator on file are the actions attackers want from a helpdesk. They stay with humans.
+- **Scoped access to Okta.** The server uses a token with two scopes and a role limited to one group, not an admin API token. See [How the server talks to Okta](#okta-verify-push).
+- **Tests sized to the budget.** A simulation costs about 400 credits and a Tool Call test about 100, so number handling, where an exact check works, uses the cheap kind, and only conversation quality uses simulations. A full run at 3 repeats costs about 12,000 credits, roughly a third of a month on the Starter plan. The open S2 issue was left documented rather than spending more runs on it, so the budget could go to the Okta work.
+- **Scripts over the judge where possible.** The LLM judge missed two of three silent hang-ups and does not look for gender outside G1, so both are also counted by a script over the transcripts.
 
 ## How it works
 
@@ -50,6 +67,13 @@ flowchart LR
     api -- scoped OAuth + DPoP --> okta[Okta<br/>Verify push with<br/>number challenge]
     runner[Test runner<br/>run_tests, repeat_count] --> agent
 ```
+
+| Part | Model or service |
+|------|------------------|
+| Agent | `claude-sonnet-5-5`, temperature 0 |
+| Voice | ElevenLabs `eleven_v4_turbo`, voice "Ana María" (Mexican Spanish) |
+| Speech to text, turn taking, language detection | ElevenLabs Agents defaults, turn eagerness set to patient |
+| Simulated callers and judge in the tests | `claude-sonnet-4-6` (the Next reply test uses an ElevenLabs default judge that cannot be set) |
 
 The agent talks; the service decides. Every rule that matters is enforced on the server, so a caller who talks the agent into skipping a step still cannot unlock anything:
 
@@ -167,15 +191,29 @@ python scripts/okta_check.py --push u019  # sends a real push and waits for it
 - **This is a demo.** In-memory state, a temporary tunnel, a mock directory, no rate limiting on lookups, no audit log. The unlock only changes the mock directory; it does not unlock anything in Okta.
 - **Results are for one setup:** agent on `claude-sonnet-5-5` at temperature 0, simulations played and judged by `claude-sonnet-4-6`. A different model needs its own baseline.
 
+## What a real rollout would need
+
+- **Real unlock.** Replace the mock directory with the identity provider: for Okta, look the employee up by employee number and call the user unlock endpoint with the same scoped token (one more scope).
+- **A phone number.** Connect the agent to the company's phone system through a Twilio number or a SIP trunk, and replace "a human colleague will contact you" with a live transfer to the helpdesk queue.
+- **State and audit.** Move attempts, lockouts and tokens to a shared store, rate-limit lookups per caller and per employee, and keep an audit log of every verification and unlock.
+- **Monitoring.** Send each finished call to the helpdesk's ticketing system through the post-call webhook, and alert on rising lockout or hand-off rates.
+- **Audio testing.** Run the suite on recorded calls with real noise and accents, since text tests do not measure speech recognition.
+- **A stronger factor for high-risk accounts.** Identity verification with an ID document and a live selfie, for administrators and executives.
+
 ## Built with AI assistance
 
 > Draft for Carlos to review and edit.
 
-This project was built with Claude Code (Anthropic's coding agent) working in the repo, with me directing. The split:
+This project was built with Claude Code (Claude Opus 5.5) working in the repo, with me directing. The split:
 
-- **Me:** the plan and scope (unlock only, server-side enforcement, synthetic data, the test categories), the guardrails, every spending decision on test runs, the manual voice calls, reviewing the Spanish in the test scenarios as a native speaker, and the judgment calls on results. The gender bug came from me noticing "la escucho" on the first call, and the push "listo" problem from a live call with dogs barking.
-- **Claude Code:** most of the code (service, tests, scripts, configs), reading the ElevenLabs docs and SDK, and probing undocumented behavior with throwaway tests (parameter paths, test-mode tool results).
-- **How we worked:** a written plan and handover doc first; small steps, each with a done check; every number in this README comes from a saved run, not from a summary. Commits are not individually marked as co-authored; this section covers the whole project instead.
+- **Me:** the design plan and scope (unlock only, server-side enforcement, synthetic data, the test categories), the guardrails, every spending decision on test runs, the manual voice calls, reviewing the Spanish in the test scenarios as a native speaker, and the judgment calls on results.
+- **Where I changed the direction:**
+  - In the first call I caught the gendered "la escucho" and the agent assuming why I called. Both became tests before they were fixed.
+  - I chose a voice that fits a Mexican persona.
+  - In a live Okta call I found that background noise stalled the push.
+  - I asked for a scoped OAuth token instead of an admin API token.
+  - I chose to leave S2 documented and put the credits into the Okta work.
+- **Claude Code:** most of the code (service, tests, scripts, configs) and probing undocumented behavior with throwaway tests (parameter paths, test-mode tool results, the DPoP `%40` detail).
 
 ## Repository layout
 
