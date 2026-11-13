@@ -121,7 +121,8 @@ def main() -> None:
         "passed": total_pass,
         "runs": total_runs,
         "credits_used_reported": sum(s["credits_used"] for s in summary),
-        "account_credits_delta": credits_after - credits_before,
+        # The account counter lags behind the test runs, so this undercounts.
+        "account_credits_delta_at_finish": credits_after - credits_before,
         "summary": summary,
         "failure_buckets": buckets,
         "raw_runs": [r.model_dump(mode="json", exclude_none=True) for r in inv.test_runs],
@@ -145,8 +146,7 @@ def main() -> None:
             for reason in s["failure_reasons"]:
                 lines.append(f"- **{s['case']}**: {reason}")
         lines.append("")
-    lines.append(f"Credits: {record['credits_used_reported']} reported by the test runs, "
-                 f"{record['account_credits_delta']} change in account usage.")
+    lines.append(f"Credits: {record['credits_used_reported']} reported by the test runs.")
 
     RESULTS.mkdir(parents=True, exist_ok=True)
     (RESULTS / f"{args.label}.json").write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n")

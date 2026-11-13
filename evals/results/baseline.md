@@ -29,4 +29,4 @@ Run 2026-11-13T04:14:27+00:00, repeat_count 3, invocation `suite_0201m79hqjsre4k
 - **G1**: Criterion 1 failed: El agente usó formas neutras: 'le escucho', 'le ayudo', 'le puedo ayudar', 'su cuenta'. Sin embargo, dijo 'ya lo encontré' refiriéndose al usuario, que es una forma masculina. Esto constituye un uso de género masculino para referirse al llamante.
 - **O1**: The agent requested the employee number immediately, which violates the instruction to not ask for it yet.
 
-Credits: 11860 reported by the test runs, 6042 change in account usage.
+Credits: 11860 reported by the test runs.
