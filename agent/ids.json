@@ -5,5 +5,9 @@
     "verify_identity": "tool_6701m79dqrbyf5hrpjmpnr6azmw1",
     "unlock_account": "tool_0301m79dqrqqe17bct5tjp37etaf"
   },
-  "agent_id": "agent_7001m79dqsaqfjzt36v7bffz5mma"
+  "agent_id": "agent_7001m79dqsaqfjzt36v7bffz5mma",
+  "webhook": {
+    "id": "34c4b8448ff54efa8a8b1e70fd05b462",
+    "url": "https://descending-workshop-letter-ratings.trycloudflare.com/webhooks/elevenlabs"
+  }
 }

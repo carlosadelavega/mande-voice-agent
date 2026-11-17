@@ -11,6 +11,11 @@ Configs use ${NAME} placeholders, filled in here:
   PROMPT          agent/prompt.md
   TOOL_IDS        IDs of the three tools after they are created
 
+It also points the agent's post-call webhook at {base-url}/webhooks/elevenlabs.
+A webhook's URL cannot be changed, so a new tunnel URL means a new webhook:
+the old one is deleted and the new HMAC secret is written to
+.secrets/elevenlabs_webhook_secret (ignored by git), where the server reads it.
+
 IDs of created resources are stored in agent/ids.json so later pushes update
 them in place instead of creating duplicates. They are not secrets.
 """
@@ -24,13 +29,15 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-from elevenlabs import ElevenLabs, ToolRequestModel
+from elevenlabs import AgentPlatformSettingsRequestModel, ElevenLabs, ToolRequestModel, WebhookHmacSettings
 
 ROOT = Path(__file__).resolve().parent.parent
 AGENT_DIR = ROOT / "agent"
 IDS_FILE = AGENT_DIR / "ids.json"
 TOOL_NAMES = ["lookup_user", "verify_identity", "unlock_account"]
 SECRET_NAME = "helpdesk_tool_secret"
+WEBHOOK_NAME = "helpdesk post-call (mande-voice-agent)"
+WEBHOOK_SECRET_FILE = ROOT / ".secrets" / "elevenlabs_webhook_secret"
 
 
 def render(node, values: dict):
@@ -74,6 +81,32 @@ def ensure_secret(client: ElevenLabs, ids: dict) -> str:
     return secret_id
 
 
+def ensure_webhook(client: ElevenLabs, ids: dict, base_url: str) -> str:
+    url = f"{base_url}/webhooks/elevenlabs"
+    current = ids.get("webhook") or {}
+    existing = {w.webhook_id for w in (client.webhooks.list().webhooks or [])}
+    if current.get("url") == url and current.get("id") in existing and WEBHOOK_SECRET_FILE.exists():
+        print("post-call webhook unchanged")
+        return current["id"]
+    created = client.webhooks.create(settings=WebhookHmacSettings(name=WEBHOOK_NAME, webhook_url=url))
+    if not created.webhook_secret:
+        sys.exit("ElevenLabs returned no webhook secret")
+    WEBHOOK_SECRET_FILE.parent.mkdir(mode=0o700, exist_ok=True)
+    tmp = WEBHOOK_SECRET_FILE.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.write(fd, created.webhook_secret.encode())
+    os.close(fd)
+    os.replace(tmp, WEBHOOK_SECRET_FILE)
+    # Retries are off by default; turn them on (5xx, 429 and timeouts are retried).
+    client.webhooks.update(created.webhook_id, is_disabled=False, name=WEBHOOK_NAME, retry_enabled=True)
+    if current.get("id") in existing:
+        client.webhooks.delete(current["id"])
+        print("deleted old post-call webhook")
+    ids["webhook"] = {"id": created.webhook_id, "url": url}
+    print(f"created post-call webhook -> {url} (secret saved to .secrets/)")
+    return created.webhook_id
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base-url", required=True, help="public HTTPS URL of the tool service")
@@ -92,7 +125,8 @@ def main() -> None:
 
     if args.dry_run:
         values = {"TOOL_BASE_URL": base_url, "TOOL_SECRET_ID": ids.get("secret_id", "<secret_id>"),
-                  "PROMPT": "<agent/prompt.md>", "TOOL_IDS": ["<tool ids>"]}
+                  "PROMPT": "<agent/prompt.md>", "TOOL_IDS": ["<tool ids>"],
+                  "WEBHOOK_ID": (ids.get("webhook") or {}).get("id", "<webhook id>")}
         for n, cfg in tool_configs.items():
             print(f"--- tool {n}\n{json.dumps(render(cfg, values), indent=2, ensure_ascii=False)}")
         print(f"--- agent\n{json.dumps(render(agent_config, values), indent=2, ensure_ascii=False)}")
@@ -115,15 +149,27 @@ def main() -> None:
             print(f"created tool {name}")
         save_ids(ids)
 
-    rendered_agent = render(agent_config, {"PROMPT": prompt, "TOOL_IDS": [tool_ids[n] for n in TOOL_NAMES]})
+    webhook_id = ensure_webhook(client, ids, base_url)
+    save_ids(ids)
+
+    rendered_agent = render(agent_config, {"PROMPT": prompt, "TOOL_IDS": [tool_ids[n] for n in TOOL_NAMES],
+                                           "WEBHOOK_ID": webhook_id})
+    # Only the platform settings set in agent.json are sent; the rest (attached tests, widget...) stay.
+    platform = AgentPlatformSettingsRequestModel.model_validate(rendered_agent.get("platform_settings", {}))
     if "agent_id" in ids:
+        before = len(client.conversational_ai.agents.get(ids["agent_id"]).platform_settings.testing.attached_tests)
         client.conversational_ai.agents.update(
-            ids["agent_id"], name=rendered_agent["name"], conversation_config=rendered_agent["conversation_config"]
+            ids["agent_id"], name=rendered_agent["name"], conversation_config=rendered_agent["conversation_config"],
+            platform_settings=platform,
         )
+        after = len(client.conversational_ai.agents.get(ids["agent_id"]).platform_settings.testing.attached_tests)
         print("updated agent")
+        if after != before:
+            print(f"WARNING: attached tests went from {before} to {after}; run scripts/sync_tests.py")
     else:
         ids["agent_id"] = client.conversational_ai.agents.create(
-            name=rendered_agent["name"], conversation_config=rendered_agent["conversation_config"]
+            name=rendered_agent["name"], conversation_config=rendered_agent["conversation_config"],
+            platform_settings=platform,
         ).agent_id
         print("created agent")
     save_ids(ids)

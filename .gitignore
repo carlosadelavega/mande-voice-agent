@@ -22,3 +22,6 @@ __pycache__/
 # Okta service app private key
 .secrets/
 *.pem
+
+# Local event spool (used when Splunk HEC is unset or down)
+logs/

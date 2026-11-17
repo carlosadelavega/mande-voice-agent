@@ -7,7 +7,12 @@
     "url": "${TOOL_BASE_URL}/tools/lookup_user",
     "method": "POST",
     "request_headers": {
-      "X-Tool-Secret": {"secret_id": "${TOOL_SECRET_ID}"}
+      "X-Tool-Secret": {
+        "secret_id": "${TOOL_SECRET_ID}"
+      },
+      "X-Conversation-Id": {
+        "variable_name": "system__conversation_id"
+      }
     },
     "request_body_schema": {
       "type": "object",

@@ -57,6 +57,7 @@ The number tests all passed from the start. The surprises were about manners and
 - **Unlock only.** Password resets and changing the phone or authenticator on file are the actions attackers want from a helpdesk. They stay with humans.
 - **Scoped access to Okta.** The server uses a token with two scopes and a role limited to one group, not an admin API token. See [How the server talks to Okta](#okta-verify-push).
 - **Tests sized to the budget.** A simulation costs about 400 credits and a Tool Call test about 100, so number handling, where an exact check works, uses the cheap kind, and only conversation quality uses simulations. A full run at 3 repeats costs about 12,000 credits, roughly a third of a month on the Starter plan. The open S2 issue was left documented rather than spending more runs on it, so the budget could go to the Okta work.
+- **Facts from the server, context from the call.** Security monitoring treats the server's own decisions as the record of what happened, and the call transcript and its LLM analysis as context. The SIEM gets one compact event per call, not the transcript. See [Security monitoring](#security-monitoring-splunk).
 - **Scripts over the judge where possible, and a human over both for language.** The LLM judge missed two of three silent hang-ups and misread why "ya lo encontré" was wrong. A script now counts both over every transcript, and a native speaker decides what counts in Spanish.
 
 ## How it works
@@ -68,6 +69,8 @@ flowchart LR
     api --> dir[(Mock directory<br/>19 synthetic employees)]
     api --> totp[Verifier<br/>TOTP via pyotp]
     api -- scoped OAuth + DPoP --> okta[Okta<br/>Verify push with<br/>number challenge]
+    api -- audit events --> splunk[(Splunk HEC<br/>index helpdesk)]
+    agent -- post-call webhook --> api
     runner[Test runner<br/>run_tests, repeat_count] --> agent
 ```
 
@@ -111,13 +114,55 @@ Approved means a verification token, exactly as with a correct code. Rejected or
 
 One undocumented detail: with DPoP, Okta compares the proof's URL with the decoded path, so a login with `@` must be signed as `@`, not `%40`.
 
+## Security monitoring (Splunk)
+
+Helpdesk phone lines are a known target, so every call should leave a trail a security team can search. Two kinds of event go to Splunk's HTTP Event Collector, in one index, and join on the ElevenLabs `conversation_id`:
+
+| Source type | One per | From | What it holds |
+|-------------|---------|------|---------------|
+| `helpdesk:audit` | tool call | the server, as it decides | which tool, `user_id`, how the user was looked up, the result (wrong code, push rejected, lockout, unlock), severity |
+| `helpdesk:call` | call | ElevenLabs' post-call webhook | outcome, factor, failed attempts, lockout, language, duration, how the call ended, cost, a summary, two LLM yes/no flags, severity |
+
+The audit events are the facts: the server made those decisions. The call event is the context: what the caller was trying to do, as an LLM read it after the call. Each tool call carries the conversation ID as a header, so in Splunk a call's events line up on one timeline.
+
+**What is left out on purpose.** No transcript: it is many KB per call (Splunk is priced by data ingested), it holds personal data, and it stays in ElevenLabs under the conversation ID. No codes or tokens; the verification token was already shown as `<REDACTED>` in what ElevenLabs stores. Employee numbers and any run of 3 or more digits (a code read aloud, a phone number) are removed from the summary.
+
+**The two LLM flags.** After each call, ElevenLabs' analysis answers "did the caller try to get unlocked without verification?" and "did they ask for personal data on file?". On this plan the analysis model is `gemini-2.5-flash` and it is not billed (0 credits, checked on a real call). The flags raise the call's severity but are marked as LLM output, not proof. In a test call the caller said they had no phone and asked Andrea to unlock it anyway; she refused, waited, and unlocked after the push. The call came in as `outcome=unlocked`, `severity=high`, with the rationale "alegando urgencia y falta de acceso al teléfono". A legitimate unlock after a social engineering attempt is exactly the call an analyst should look at.
+
+**How the webhook is checked.** The HMAC signature over the raw body, with the timestamp no older than 30 minutes and no more than 5 in the future. A bad signature is refused with 401 and logged as an audit event. Retries are turned on, and a retried delivery is processed once. A webhook URL cannot be changed in ElevenLabs, so `push_agent.py` replaces the webhook when the tunnel URL changes and saves the new secret to `.secrets/` without printing it.
+
+**How events reach Splunk.** HEC, because the events are already JSON over HTTP, the token can only write to one index, and the same setup works on Splunk Cloud by changing the URL and token. Events are sent from a background thread so the caller never waits on Splunk; if HEC is down, they go to `logs/events.jsonl`. TLS is checked against a local CA: Splunk's built-in certificate is not issued for `localhost` and current OpenSSL rejects its CA, so HEC uses a certificate for `localhost` signed by a small local CA instead of turning verification off.
+
+Example searches:
+
+```
+# One call, server decisions and call summary on one timeline
+index=helpdesk conversation_id="conv_..." | sort _time
+| table _time sourcetype tool result.reason outcome severity
+
+# Unlocked calls where the caller first tried to skip verification
+index=helpdesk sourcetype=helpdesk:call outcome=unlocked llm_analysis.verification_bypass_attempt=true
+| table _time conversation_id user_id llm_analysis.summary
+
+# Same employee failing verification across several calls (guessing or a stolen phone)
+index=helpdesk sourcetype=helpdesk:audit tool=verify_identity
+    result.reason IN (wrong_code, push_rejected, push_expired, locked_out)
+| stats count dc(conversation_id) AS calls BY user_id | where calls > 1
+
+# Someone asked to unlock without verifying (the agent was talked into trying)
+index=helpdesk sourcetype=helpdesk:audit tool=unlock_account result.reason=verification_required
+
+# Daily outcomes
+index=helpdesk sourcetype=helpdesk:call | timechart span=1d count BY outcome
+```
+
 ## How the tests work
 
 Test definitions are in [`evals/cases.py`](evals/cases.py) and the plan behind them in [`evals/test_plan.md`](evals/test_plan.md). Three kinds:
 
 - **Tool Call** (N1 to P1): a fixed conversation, then an exact or regex check on the parameters the agent sends. No LLM judge.
 - **Next reply** (O1): a fixed conversation, then an LLM judge reads the agent's next message.
-- **Simulation** (the rest): an LLM plays the caller from a scenario, and an LLM judge checks the whole call against written conditions. All three tools are mocked, so every run starts from the same state. The server's own rules are covered separately by 64 `pytest` tests, including the push flow and the OAuth and DPoP exchange against a mock Okta.
+- **Simulation** (the rest): an LLM plays the caller from a scenario, and an LLM judge checks the whole call against written conditions. All three tools are mocked, so every run starts from the same state. The server's own rules are covered separately by 88 `pytest` tests, including the push flow, the OAuth and DPoP exchange against a mock Okta, and the webhook checks, redaction and HEC client.
 
 The push path was tested with real pushes and live calls, not with the ElevenLabs suite, to save credits.
 
@@ -141,8 +186,8 @@ pytest                  # server rules, no network needed
 Run the service and expose it:
 
 ```bash
-uvicorn app.main:build_app --factory --port 8000
-cloudflared tunnel --url http://localhost:8000
+uvicorn app.main:build_app --factory --port 8080
+cloudflared tunnel --url http://localhost:8080
 ```
 
 Create or update the agent, its tools and the workspace secret, using the tunnel URL:
@@ -179,6 +224,8 @@ python scripts/okta_check.py              # finds the user and the push factor
 python scripts/okta_check.py --push u019  # sends a real push and waits for it
 ```
 
+Optional, for Splunk. In Splunk Web: create an index `helpdesk`; under Settings, Data inputs, HTTP Event Collector, enable tokens and create a token allowed to write only to `helpdesk`. Put `SPLUNK_HEC_URL` and `SPLUNK_HEC_TOKEN` in `.env`. For a local Splunk, make a CA and a `localhost` certificate, keep the CA at `.secrets/splunk/ca.pem`, and set `serverCert` under `[http]` in `$SPLUNK_HOME/etc/apps/splunk_httpinput/local/inputs.conf`. Without Splunk, events are written to `logs/events.jsonl`. The post-call webhook needs an ElevenLabs API key with webhook write access; `push_agent.py` creates it.
+
 **On GitHub.** Every push runs `pytest` on Python 3.12 and the latest Python, plus a check that no `.env` file or private key is committed. This is free and needs no secrets. The agent tests spend credits, so they only run by hand: in the Actions tab, run "Agent tests (manual, spends credits)" and choose the cases and repeat count (the default, N1 and O1 once, costs about 200 credits). It needs a repository secret `ELEVENLABS_API_KEY`, and the results appear in the run summary and as a downloadable file.
 
 `data/directory.json` is synthetic and safe to commit. TOTP secrets are not stored in it; they are derived from `TOTP_MASTER_KEY` at runtime. `scripts/generate_directory.py` rebuilds it.
@@ -192,6 +239,8 @@ python scripts/okta_check.py --push u019  # sends a real push and waits for it
 - **TOTP read aloud can be phished.** An attacker on another call could talk someone into reading their code. Voice is never treated as proof of identity, but a spoken code is a weak factor.
 - **A push proves the phone, not the person.** Number matching stops blind approvals: the number is only known to whoever is on the call with the agent. But it proves the caller holds the employee's unlocked phone, nothing more. Requiring Face ID or a fingerprint on the push looked like the next step; the Okta setting for it is enforced through sign-in policies, which do not apply to a push sent through the Factors API, and in testing no biometric prompt appeared. Factors called phishing-resistant (FastPass, passkeys) protect a website sign-in by binding it to the site's address; a phone call has no such address, so they do not fit this channel. The stronger option for a helpdesk is identity verification with an ID document and a live selfie, which Okta supports through third-party providers. It is not built here.
 - **This is a demo.** In-memory state, a temporary tunnel, a mock directory, no rate limiting on lookups, no audit log. The unlock only changes the mock directory; it does not unlock anything in Okta.
+- **The call summary can still hold names.** Digits and employee numbers are removed, but the LLM summary may name the caller. Splunk usually holds identities anyway; a stricter setup would drop the summary or run it through a dedicated PII filter.
+- **Event delivery is best effort.** Events are queued in memory and spooled to a file when HEC fails; a crash between the two loses what was queued.
 - **Results are for one setup:** agent on `claude-sonnet-5-5` at temperature 0, simulations played and judged by `claude-sonnet-4-6`. A different model needs its own baseline.
 
 ## What a real rollout would need
@@ -199,7 +248,7 @@ python scripts/okta_check.py --push u019  # sends a real push and waits for it
 - **Real unlock.** Replace the mock directory with the identity provider: for Okta, look the employee up by employee number and call the user unlock endpoint with the same scoped token (one more scope).
 - **A phone number.** Connect the agent to the company's phone system through a Twilio number or a SIP trunk, and replace "a human colleague will contact you" with a live transfer to the helpdesk queue.
 - **State and audit.** Move attempts, lockouts and tokens to a shared store, rate-limit lookups per caller and per employee, and keep an audit log of every verification and unlock.
-- **Monitoring.** Send each finished call to the helpdesk's ticketing system through the post-call webhook, and alert on rising lockout or hand-off rates.
+- **Monitoring.** Turn the example searches into Splunk alerts (lockouts, repeated failures on one employee, bypass attempts), send each finished call to the ticketing system, use HEC indexer acknowledgement so an event counts as delivered only once it is stored, and have a Universal Forwarder pick up the spool file. Keep the post-call webhook on a stable URL instead of a quick tunnel.
 - **Audio testing.** Run the suite on recorded calls with real noise and accents, since text tests do not measure speech recognition.
 - **A stronger factor for high-risk accounts.** Identity verification with an ID document and a live selfie, for administrators and executives.
 
@@ -215,9 +264,10 @@ This project was built with Claude Code (Opus 5.5) working in the repo, with me 
 ```
 .github/          CI: pytest on every push; agent tests by hand
 agent/            prompt, tool configs, agent config (pushed by scripts/push_agent.py)
-app/              FastAPI service: directory, TOTP verifier, Okta push and OAuth client, the three tools
+app/              FastAPI service: directory, TOTP verifier, Okta push and OAuth client, the three tools,
+                  post-call webhook and Splunk events
 data/             synthetic employee directory
 evals/            test plan, test definitions, results
 scripts/          push agent, sync and run tests, compare runs, transcript checks, TOTP codes, Okta check
-tests/            pytest suite for the server rules, the push flow and the Okta client
+tests/            pytest suite for the server rules, the push flow, the Okta client and the SIEM events
 ```

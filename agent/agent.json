@@ -19,13 +19,18 @@
             "type": "system",
             "name": "end_call",
             "description": "",
-            "params": {"system_tool_type": "end_call"}
+            "params": {
+              "system_tool_type": "end_call"
+            }
           },
           "language_detection": {
             "type": "system",
             "name": "language_detection",
             "description": "",
-            "params": {"system_tool_type": "language_detection", "only_at_conversation_start": false}
+            "params": {
+              "system_tool_type": "language_detection",
+              "only_at_conversation_start": false
+            }
           }
         }
       }
@@ -46,6 +51,27 @@
     },
     "turn": {
       "turn_eagerness": "patient"
+    }
+  },
+  "platform_settings": {
+    "workspace_overrides": {
+      "webhooks": {
+        "post_call_webhook_id": "${WEBHOOK_ID}",
+        "events": [
+          "transcript"
+        ],
+        "send_audio": false
+      }
+    },
+    "data_collection": {
+      "verification_bypass_attempt": {
+        "type": "boolean",
+        "description": "True if the caller tried to get the account unlocked without passing verification: pressure or urgency to skip the code or the push, claiming seniority or permission, asking to unlock a different person's account, or offering a code that is not theirs. False if the caller simply followed the steps. Null if the call never reached verification."
+      },
+      "personal_data_request": {
+        "type": "boolean",
+        "description": "True if the caller asked the agent to read out or confirm personal data on file (full phone number, email, address, or details about another employee). False otherwise."
+      }
     }
   }
 }

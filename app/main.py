@@ -8,23 +8,30 @@ can't unlock anything:
   - verify_identity allows 3 wrong codes, then locks verification out
   - unlock_account needs a short-lived, single-use token issued by a
     successful verify_identity for that same user_id
+
+Every tool call is also sent to the SIEM as a helpdesk:audit event, and
+ElevenLabs' post-call webhook arrives at /webhooks/elevenlabs and becomes a
+helpdesk:call event (see events.py and calls.py).
 """
 
 from __future__ import annotations
 
 import functools
 import hmac
+import json
 import logging
 import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Callable
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, model_validator
 
+from .calls import SeenEvents, SignatureError, summarize_call, verify_signature
 from .config import Settings
 from .directory import Directory, Employee
+from .events import EventSink, build_sink
 from .okta import OktaError, PushClient
 from .okta_auth import build_okta_client
 from .verifier import TotpVerifier, Verifier, normalize_code
@@ -64,25 +71,52 @@ class UnlockAccountRequest(ToolRequest):
     verification_token: str | None = None
 
 
-def _logged(fn):
-    """Log each tool call with secrets redacted, for debugging live calls."""
+HIDDEN_RESULT_KEYS = {"verification_token", "next_step", "masked_phone"}
 
-    @functools.wraps(fn)
-    def wrapper(*args, **kwargs):
-        result = fn(*args, **kwargs)
-        req = kwargs.get("req")
-        params = req.model_dump(exclude_none=True) if req is not None else {}
-        if "code" in params:
-            params["code"] = f"<{len(normalize_code(params['code']))} digits>"
-        if "verification_token" in params:
-            params["verification_token"] = "<body token>"
-        if kwargs.get("x_verification_token"):
-            params["header_token"] = True
-        shown = {k: v for k, v in result.items() if k not in ("verification_token", "next_step")}
-        log.info("%s %s -> %s", fn.__name__, params, shown)
-        return result
 
-    return wrapper
+def _severity(tool: str, result: dict) -> str:
+    reason = result.get("reason")
+    if reason == "locked_out" or (tool == "unlock_account" and reason == "verification_required"):
+        return "high"
+    if reason in ("wrong_code", "push_rejected", "push_expired", "factor_unavailable", "account_disabled") \
+            or result.get("account_status") == "disabled":
+        return "medium"
+    return "info"
+
+
+def _audited(events: EventSink, now: Callable[[], float]):
+    """Log each tool call with secrets redacted, and send it to the SIEM."""
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            result = fn(*args, **kwargs)
+            req = kwargs.get("req")
+            params = req.model_dump(exclude_none=True) if req is not None else {}
+            if "code" in params:
+                params["code"] = f"<{len(normalize_code(params['code']))} digits>"
+            if "verification_token" in params:
+                params["verification_token"] = "<body token>"
+            if kwargs.get("x_verification_token"):
+                params["header_token"] = True
+            shown = {k: v for k, v in result.items() if k not in HIDDEN_RESULT_KEYS}
+            log.info("%s [%s] %s -> %s", fn.__name__, kwargs.get("x_conversation_id") or "-", params, shown)
+            event = {
+                "event_type": "tool_call",
+                "tool": fn.__name__,
+                "conversation_id": kwargs.get("x_conversation_id"),
+                "user_id": params.get("user_id") or result.get("user_id"),
+                "severity": _severity(fn.__name__, result),
+                "result": shown,
+            }
+            if fn.__name__ == "lookup_user":
+                event["lookup_by"] = "employee_number" if params.get("employee_number") else "name"
+            events.send("helpdesk:audit", event, at=now())
+            return result
+
+        return wrapper
+
+    return decorator
 
 
 @dataclass
@@ -116,6 +150,7 @@ def create_app(
     verifier: Verifier | None = None,
     now: Callable[[], float] = time.time,
     push_client: PushClient | None = None,
+    events: EventSink | None = None,
 ) -> FastAPI:
     directory = directory or Directory.load(settings.directory_path)
     verifier = verifier or TotpVerifier(settings.totp_master_key, now, settings.totp_valid_window)
@@ -125,11 +160,15 @@ def create_app(
         except OktaError as e:  # e.g. key file missing: push employees fail closed
             log.error("okta disabled: %s", e)
     state = State()
+    events = events if events is not None else build_sink(settings)
+    _logged = _audited(events, now)
+    seen_calls = SeenEvents()
 
     app = FastAPI(title="IT helpdesk unlock tools")
     app.state.directory = directory
     app.state.verifier = verifier
     app.state.state = state
+    app.state.events = events
 
     def require_tool_secret(x_tool_secret: str | None = Header(default=None)) -> None:
         if not x_tool_secret or not hmac.compare_digest(x_tool_secret, settings.tool_shared_secret):
@@ -143,7 +182,7 @@ def create_app(
 
     @app.post("/tools/lookup_user", dependencies=tools)
     @_logged
-    def lookup_user(req: LookupUserRequest) -> dict:
+    def lookup_user(req: LookupUserRequest, x_conversation_id: str | None = Header(default=None)) -> dict:
         if req.employee_number:
             emp = directory.find_by_employee_number(req.employee_number)
             matches = [emp] if emp else []
@@ -194,7 +233,7 @@ def create_app(
 
     @app.post("/tools/verify_identity", dependencies=tools)
     @_logged
-    def verify_identity(req: VerifyIdentityRequest) -> dict:
+    def verify_identity(req: VerifyIdentityRequest, x_conversation_id: str | None = Header(default=None)) -> dict:
         emp = directory.get(req.user_id)
         if emp is None:
             return {"verified": False, "reason": "unknown_user", "next_step": "Look the user up again first."}
@@ -299,7 +338,9 @@ def create_app(
     @app.post("/tools/unlock_account", dependencies=tools)
     @_logged
     def unlock_account(
-        req: UnlockAccountRequest, x_verification_token: str | None = Header(default=None)
+        req: UnlockAccountRequest,
+        x_verification_token: str | None = Header(default=None),
+        x_conversation_id: str | None = Header(default=None),
     ) -> dict:
         refused = {
             "unlocked": False,
@@ -324,6 +365,34 @@ def create_app(
         was_locked = emp.account_status == "locked"
         emp.account_status = "active"
         return {"unlocked": True, "was_locked": was_locked, "next_step": "Tell the caller the account is unlocked."}
+
+    @app.post("/webhooks/elevenlabs")
+    async def elevenlabs_webhook(request: Request) -> dict:
+        """Post-call webhook. Checked, de-duplicated, reduced to one event."""
+        secret = settings.webhook_secret()
+        if not secret:
+            raise HTTPException(status_code=503, detail="webhook secret not configured")
+        raw = await request.body()
+        try:
+            verify_signature(raw, request.headers.get("elevenlabs-signature"), secret, now())
+        except SignatureError as e:
+            log.warning("rejected webhook: %s", e)
+            events.send("helpdesk:audit", {"event_type": "webhook_rejected", "reason": str(e),
+                                           "severity": "medium"}, at=now())
+            raise HTTPException(status_code=401, detail="invalid signature")
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="invalid JSON")
+        if payload.get("type") != "post_call_transcription":
+            return {"status": "ignored"}
+        conversation_id = (payload.get("data") or {}).get("conversation_id")
+        if not seen_calls.first_time((conversation_id, payload.get("type"))):
+            return {"status": "duplicate"}
+        summary = summarize_call(payload)
+        log.info("call %s -> %s (%s)", conversation_id, summary["outcome"], summary["severity"])
+        events.send("helpdesk:call", summary, at=payload.get("event_timestamp") or now())
+        return {"status": "ok"}
 
     def _locked_out_response() -> dict:
         return {

@@ -7,12 +7,21 @@
     "url": "${TOOL_BASE_URL}/tools/unlock_account",
     "method": "POST",
     "request_headers": {
-      "X-Tool-Secret": {"secret_id": "${TOOL_SECRET_ID}"},
-      "X-Verification-Token": {"variable_name": "secret__verification_token"}
+      "X-Tool-Secret": {
+        "secret_id": "${TOOL_SECRET_ID}"
+      },
+      "X-Verification-Token": {
+        "variable_name": "secret__verification_token"
+      },
+      "X-Conversation-Id": {
+        "variable_name": "system__conversation_id"
+      }
     },
     "request_body_schema": {
       "type": "object",
-      "required": ["user_id"],
+      "required": [
+        "user_id"
+      ],
       "properties": {
         "user_id": {
           "type": "string",
