@@ -6,6 +6,8 @@ A phone agent on ElevenLabs Agents takes the call in Mexican Spanish or English 
 
 Around the agent sits a regression suite of 15 tests written for how Mexican callers actually talk (codes read in pairs, "¿Bueno?", "mande", Spanglish, compound surnames) plus security cases. Each test runs several times and is reported as a pass rate, before and after each fix. Manual calls, the suite and a native speaker's read of the transcripts turned up five real problems: four were fixed and measured, one is still open.
 
+![Architecture: the caller talks to the agent on ElevenLabs Agents; the agent calls three tools on a FastAPI service that decides, using a mock directory, TOTP and Okta Verify push; the service sends audit events and post-call summaries to Splunk; a regression suite plays the caller](docs/images/architecture.svg)
+
 ## Results
 
 15 tests, each run 3 times, same scenarios and models before and after. Full tables and every transcript are in [`evals/results/`](evals/results/).
@@ -62,16 +64,36 @@ The number tests all passed from the start. The surprises were about manners and
 
 ## How it works
 
+One unlock with an Okta Verify push, based on a live test call (messages translated and shortened). A TOTP caller follows the same path, with the code checked on the server instead of the push.
+
 ```mermaid
-flowchart LR
-    caller[Caller<br/>es-MX or English] --> agent[ElevenLabs agent<br/>bilingual prompt<br/>3 webhook tools]
-    agent -- tool calls --> api[FastAPI service<br/>lookup_user<br/>verify_identity<br/>unlock_account]
-    api --> dir[(Mock directory<br/>19 synthetic employees)]
-    api --> totp[Verifier<br/>TOTP via pyotp]
-    api -- scoped OAuth + DPoP --> okta[Okta<br/>Verify push with<br/>number challenge]
-    api -- audit events --> splunk[(Splunk HEC<br/>index helpdesk)]
-    agent -- post-call webhook --> api
-    runner[Test runner<br/>run_tests, repeat_count] --> agent
+sequenceDiagram
+    autonumber
+    actor C as Caller
+    participant A as Agent (ElevenLabs)
+    participant S as Tool service
+    participant O as Okta
+    participant SP as Splunk
+    C->>A: My account is locked, it's HV3581
+    A->>S: lookup_user(employee_number)
+    S-->>A: user_id, locked, verify with a push
+    A->>S: verify_identity(user_id)
+    S->>O: push with a number challenge
+    O-->>S: number 59
+    S-->>A: push_sent, number 59
+    A->>C: Tap 59 in Okta Verify
+    C->>O: taps 59
+    Note over C,A: The caller's turn is silent or noisy,<br/>so the agent checks instead of asking again
+    A->>S: verify_identity(user_id)
+    S->>O: poll
+    O-->>S: SUCCESS
+    S-->>A: verified (the token goes to a hidden variable, not to the model)
+    A->>S: unlock_account(user_id) with the token as a header
+    S-->>A: unlocked
+    A->>C: Your account is unlocked
+    S--)SP: helpdesk:audit, sent as each tool call happens
+    A--)S: post-call webhook, after hang-up
+    S--)SP: helpdesk:call, one per call
 ```
 
 | Part | Model or service |
